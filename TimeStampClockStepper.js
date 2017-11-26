@@ -1,19 +1,22 @@
-var c = new Array();
+var c = {};
 c['Host'] = 'localhost';
 c['Secret'] = 'secret';
 c['PortBrowser'] = 4280;
 c['PortServer'] = 4223;
-c['Disp'] = new Array();
-c['Disp']['Uid'] = 'BmD';
-c['Switch'] = new Array();
-c['Switch']['Uid'] = 'Byy';
-c['Store'] = new Array();
-c['Store']['Interval'] = 10; // in s
-c['Store']['Monoflop'] = 500; // in ms
-c['Store']['MonoflopBrake'] = 500; // in ms
-c['Store']['Ip'] = 'localhost';
-c['Store']['IoHost'] = '';
-c['Store']['IoPath'] = '';  // Get an JSON with {"d":6,"h":21,"m":15}
+c['Disp'] = {};
+c['Disp']['Uid'] = 'XXX';
+c['Switch'] = {};
+c['Switch']['Uid'] = 'XXX';
+c['Pub'] = {};
+c['Prv'] = {};
+c['Pub']['Interval'] = 10; // in s
+c['Pub']['Monoflop'] = 500; // in ms
+c['Pub']['MonoflopBrake'] = 500; // in ms
+c['Pub']['IoNet'] = true;
+c['Pub']['Ip'] = 'localhost';
+c['Pub']['IoHost'] = 'io.XXX.de';
+c['Prv']['IoPathConfig'] = '/io.php?Api=filestore&Container=XXX&Path=config.json&UserId=XXX&UserKey=XXX&Action='; 
+c['Prv']['IoPathBeat'] = '/io.php?Api=filestore&Container=XXX&Path=beat.json&UserId=XXX&UserKey=XXX&Action=';
 
 if(typeof require === 'function' ) {
     var tf = require('tinkerforge');
@@ -24,7 +27,7 @@ if(typeof require === 'function' ) {
     var os = require('os');
     var net = os.networkInterfaces();
     //console.log(net);
-    c['Store']['Ip'] = net['wlan0'][0]['address'];
+    c['Pub']['Ip'] = net['wlan0'][0]['address'];
 } else {
     c['Port'] = c['PortBrowser'];
 }
@@ -56,96 +59,136 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                 oled.writeLine(0, 0, 'StampClockStepper');
                 oled.writeLine(2, 0, 'Das System wird gestartet');
                 iqr.setValue(0);
-                c['Store']['Tx'] = '';
+                c['Pub']['Tx'] = {};
+                c['Pub']['TxL'] = 'IO   CLK: --               ';
+
+                //if(c['Pub']['IoNet'] == true && c['Prv']['IoPathConfig'] !== undefined) {
+
+                    setInterval(function () {
+                         try {
+                            if(c['Pub']['Tx'].d == undefined || c['Pub']['Tx'].h == undefined || c['Pub']['Tx'].m == undefined) {
+                                var options = {
+                                    host: c['Pub']['IoHost'],
+                                    port: 443,
+                                    path: c['Prv']['IoPathConfig']+'GetData',
+                                    method: 'GET'
+                                };
+
+                                var req = https.request(options, function(res) {
+                                    //console.log('STATUS: ' + res.statusCode);
+                                    //console.log('HEADERS: ' + JSON.stringify(res.headers));
+                                    res.setEncoding('utf8');
+                                    res.on('data', function (data) {
+                                        data = JSON.parse(data)
+                                        if(data.d !== undefined && data.m !== undefined && data.h !== undefined) {
+                                            c['Pub']['Tx'] = data;
+                                            console.log('Get New Time from IOnet');
+                                            var TxTxt = time2string(c['Pub']['Tx']);
+                                            c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
+
+                                            var options = {
+                                                host: c['Pub']['IoHost'],
+                                                port: 443,
+                                                path: c['Prv']['IoPathConfig']+'SetData&Value={}',
+                                                method: 'GET'
+                                            };
+                                            var req = https.request(options, function(res) {
+                                                //console.log('STATUS: ' + res.statusCode);
+                                                //console.log('HEADERS: ' + JSON.stringify(res.headers));
+                                                res.setEncoding('utf8');
+                                            }).end();
+                                        }
+                                    });
+                                }).end();
+
+                                //console.log(c['Pub']['Tx']);
+                                oled.writeLine(5, 0, c['Pub']['TxL']);
+                            }
+                        } catch (err) {
+                            c['Pub']['Tx'] = {};
+                            c['Pub']['TxL'] = 'IO ! CLK: ERR               ';
+                            oled.writeLine(5, 0, c['Pub']['TxL']);
+                        }
+                        
+                    },10000);
+                //}
 
                 setInterval(function () {
-                     try {
+                    //oled.clearDisplay();
+                    oled.writeLine(0, 0, 'StampClockStepper v.29');
+                    
+                    var Tw = new Date();
+                    c['Pub']['Tw'] = { "d":Tw.getDate(), "h":Tw.getHours(), "m":Tw.getMinutes()}
+                    var TwTxt = time2string(c['Pub']['Tw']);
+                    oled.writeLine(1, 0, 'Time NTP: '+TwTxt);
+
+                    try {
+                    	c['Pub']['scstmp'] = fs.readFileSync('scs.tmp', "utf8");
+                    } catch (e) {
+                    	c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
+                    	timer();
+                    }
+                    
+                    try {
+						c['Pub']['Ts'] = JSON.parse(c['Pub']['scstmp']);
+                    } catch (e) {
+                    	c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
+                    	timer();
+                    }
+
+                    //if(c['Pub']['IoNet'] == true && c['Pub']['IoPathConfig'] !== undefined) {
+                        if(c['Pub']['Tx'].d !== undefined && c['Pub']['Tx'].h !== undefined && c['Pub']['Tx'].m !== undefined) {
+                            //console.log('RESET TimeStamp');
+                            c['Pub']['Ts'] = c['Pub']['Tx'];
+                            var TxTxt = time2string(c['Pub']['Tx']);
+                            c['Pub']['TxL'] = 'IO   CLK: '+TxTxt+'               ';
+                            oled.writeLine(5, 0, c['Pub']['TxL']);
+                        }
+                    //}
+
+                    var TsTxt = time2string(c['Pub']['Ts']);
+                    oled.writeLine(2, 0, 'Time CLK: '+TsTxt+'               ');
+
+                    var Steps = 0;
+                    if((c['Pub']['Tw'].d - c['Pub']['Ts'].d) < 0) {
+                        Steps += (31 - c['Pub']['Ts'].d + c['Pub']['Tw'].d) * 1440;
+                    } else {
+                        Steps += (c['Pub']['Tw'].d - c['Pub']['Ts'].d) * 1440;
+                    }
+                    
+                    Steps += (c['Pub']['Tw'].h - c['Pub']['Ts'].h) * 60;
+                    Steps += (c['Pub']['Tw'].m - c['Pub']['Ts'].m) * 1;
+                    oled.writeLine(3, 0, 'Steps   : '+Steps.toString()+'               ');
+                    c['Pub']['Steps'] = Steps;
+
+                    //if(c['Pub']['IoNet'] == true && c['Pub']['IoPathBeat'] !== undefined) {
+                        var StoreTxt = encodeURIComponent(JSON.stringify(c['Pub']));
                         var options = {
-                            host: c['Store']['IoHost'],
+                            host: c['Pub']['IoHost'],
                             port: 443,
-                            path: c['Store']['IoPath']+'GetData',
+                            path: c['Prv']['IoPathBeat']+'SetData&Value='+StoreTxt, //{"Ts.d":"'+c['Pub']['Ts'].d+'"}',
                             method: 'GET'
                         };
-
+                        //console.log(options);
                         var req = https.request(options, function(res) {
                             //console.log('STATUS: ' + res.statusCode);
                             //console.log('HEADERS: ' + JSON.stringify(res.headers));
                             res.setEncoding('utf8');
-                            res.on('data', function (chunk) {
-                                c['Store']['Tx'] = JSON.parse(chunk);
-                                //console.log(chunk);
-                                //console.log(c['Store']['IoR']);
-                            });
                         }).end();
+                    //}
 
-                        var options = {
-                            host: c['Store']['IoHost'],
-                            port: 443,
-                            path: c['Store']['IoPath']+'SetData&Value={}',
-                            method: 'GET'
-                        };
-                        var req = https.request(options, function(res) {
-                            console.log('STATUS: ' + res.statusCode);
-                            console.log('HEADERS: ' + JSON.stringify(res.headers));
-                            res.setEncoding('utf8');
-                        }).end();
-                    } catch (err) {
-                        c['Store']['Tx'] = {};
-                    }
-                    console.log(c['Store']['Tx']);
-                    var TxTxt = time2string(c['Store']['Tx']);
-                    oled.writeLine(5, 0, 'IOnet   : '+TxTxt+'               ');
-                },10000);
-
-                setInterval(function () {
-                    //oled.clearDisplay();
-                    oled.writeLine(0, 0, 'StampClockStepper v.25');
-                    
-                    var Tw = new Date();
-                    c['Store']['Tw'] = { "h":Tw.getHours(), "m":Tw.getMinutes(), "d":Tw.getDate()}
-                    var TwTxt = time2string(c['Store']['Tw']);
-                    oled.writeLine(1, 0, 'Time NTP: '+TwTxt);
-
-                    try {
-                        c['Store']['scstmp'] = fs.readFileSync('scs.tmp', "utf8");
-                    } catch (e) {
-                        c['Store']['Ts'] = {'d':0,'h':0,'m':0};
-                        timer();
-                    }
-                    
-                    try {
-                        c['Store']['Ts'] = JSON.parse(c['Store']['scstmp']);
-                    } catch (e) {
-                        c['Store']['Ts'] = {'d':0,'h':0,'m':0};
-                        timer();
-                    }
-                    
-                    var TsTxt = time2string(c['Store']['Ts']);
-                    oled.writeLine(2, 0, 'Time CLK: '+TsTxt+'               ');
-
-                    var Steps = 0;
-                    if((c['Store']['Tw'].d - c['Store']['Ts'].d) < 0) {
-                        Steps += (31 - c['Store']['Ts'].d + c['Store']['Tw'].d) * 1440;
-                    } else {
-                        Steps += (c['Store']['Tw'].d - c['Store']['Ts'].d) * 1440;
-                    }
-                    
-                    Steps += (c['Store']['Tw'].h - c['Store']['Ts'].h) * 60;
-                    Steps += (c['Store']['Tw'].m - c['Store']['Ts'].m) * 1;
-                    oled.writeLine(3, 0, 'Steps   : '+Steps.toString()+'               ');
-                    c['Store']['Steps'] = Steps;
                     if(Steps > 0) {
                         impulse();
                     } else {
                         iqr.setValue(0);
                     }
 
-                    oled.writeLine(4, 0, 'IP      : '+c['Store']['Ip']+'               ');
+                    oled.writeLine(4, 0, 'IP      : '+c['Pub']['Ip']+'               ');
 
                     oled.writeLine(6, 0, 'Standby                          ');
                     oled.writeLine(7, 0, '                                 ');
                     
-                }, c['Store']['Interval'] * 1000);
+                }, c['Pub']['Interval'] * 1000);
 
                 setInterval(function() {
                     setTimeout(function() { oled.writeLine(0, 24, '|') },0);
@@ -162,8 +205,8 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
 );
 
 function impulse() {
-    var Steps = c['Store']['Steps'];
-    var StepsNow = Math.floor((c['Store']['Interval'] * 1000 / (c['Store']['Monoflop']+c['Store']['MonoflopBrake']))*0.9);
+    var Steps = c['Pub']['Steps'];
+    var StepsNow = Math.floor((c['Pub']['Interval'] * 1000 / (c['Pub']['Monoflop']+c['Pub']['MonoflopBrake']))*0.9);
     if(Steps > 0) {
         if(StepsNow > Steps) { 
             StepsNow = Steps; 
@@ -171,38 +214,33 @@ function impulse() {
         for(var i = 1;i<=StepsNow;i++) {
             setTimeout(function() {
                 oled.writeLine(6, 0, 'Run Steps: '+StepsNow+'               ');
-                if(c['Store']['StepDir'] == '-') {
+                if(c['Pub']['StepDir'] == '-') {
                     iqr.setValue(9);
                     oled.writeLine(7, 0, 'Trigger +');
                     setTimeout(function() { 
                         iqr.setValue(0);
                         oled.writeLine(7, 0, 'Trigger 0');
-                    }, c['Store']['Monoflop']);
+                    }, c['Pub']['Monoflop']);
                     timer();
-                    c['Store']['StepDir'] = "+";
+                    c['Pub']['StepDir'] = "+";
                 } else {
                     iqr.setValue(6);
                     oled.writeLine(7, 0, 'Trigger -');
                     setTimeout(function() { 
                         iqr.setValue(0);
                         oled.writeLine(7, 0, 'Trigger 0');
-                    }, c['Store']['Monoflop']);
+                    }, c['Pub']['Monoflop']);
                     timer();
-                    c['Store']['StepDir'] = "-";
+                    c['Pub']['StepDir'] = "-";
                 }
-            }, (c['Store']['Monoflop']+c['Store']['MonoflopBrake'])*i);
+            }, (c['Pub']['Monoflop']+c['Pub']['MonoflopBrake'])*i);
         }     
         iqr.setValue(0);
     }
 }
 
 function timer() {
-    var t = c['Store']['Ts'];
-    //console.log(c['Store']['Tx']);
-    if(c['Store']['Tx'] !== {}) {
-        console.log('RESET TimeStamp');
-        t = c['Store']['Tx'];
-    }
+    var t = c['Pub']['Ts'];
 
     if(t.m < 60) {
         t.m+=1;
@@ -222,14 +260,14 @@ function timer() {
             }
         }
     }
-    c['Store']['Ts'] = t;
-    fs.writeFileSync('scs.tmp', JSON.stringify(c['Store']['Ts']), { flag: 'w' });
+    c['Pub']['Ts'] = t;
+    fs.writeFileSync('scs.tmp', JSON.stringify(c['Pub']['Ts']), { flag: 'w' });
 }
 
 function time2string(a) {
     //console.log('time2string');
     try {
-        if(a.d !== undefined && a.h !== undefined && a.m !== undefined) {
+        if(a !== undefined && a.length !== 0 && a.d !== undefined && a.h !== undefined && a.m !== undefined) {
             //console.log(a);
             var d = a.d;
             if(d < 10) {
@@ -251,5 +289,4 @@ function time2string(a) {
         console.log(err);
         return '--';
     }
-
 }
