@@ -26,8 +26,10 @@ if(typeof require === 'function' ) {
     c['Port'] = c['PortServer'];
     var os = require('os');
     var net = os.networkInterfaces();
-    //console.log(net);
-    c['Pub']['Ip'] = net['wlan0'][0]['address'];
+
+    if(net['wlan0'] !== undefined && net['wlan0'][0] !== undefined) {
+    	c['Pub']['Ip'] = net['wlan0'][0]['address'];
+    }
 } else {
     c['Port'] = c['PortBrowser'];
 }
