@@ -28,7 +28,7 @@ if(typeof require === 'function' ) {
     var net = os.networkInterfaces();
 
     if(net['wlan0'] !== undefined && net['wlan0'][0] !== undefined) {
-    	c['Pub']['Ip'] = net['wlan0'][0]['address'];
+        c['Pub']['Ip'] = net['wlan0'][0]['address'];
     }
 } else {
     c['Port'] = c['PortBrowser'];
@@ -63,12 +63,12 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                 iqr.setValue(0);
                 c['Pub']['Tx'] = {};
                 c['Pub']['TxL'] = 'IO   CLK: --               ';
+                oled.writeLine(5, 0, c['Pub']['TxL']);
 
-                //if(c['Pub']['IoNet'] == true && c['Prv']['IoPathConfig'] !== undefined) {
-
+                if(c['Pub']['IoNet'] == true && c['Prv']['IoPathConfig'] !== undefined) {
                     setInterval(function () {
                          try {
-                            if(c['Pub']['Tx'].d == undefined || c['Pub']['Tx'].h == undefined || c['Pub']['Tx'].m == undefined) {
+                            if(c['Pub']['Tx'].set == undefined) {
                                 var options = {
                                     host: c['Pub']['IoHost'],
                                     port: 443,
@@ -82,28 +82,13 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                                     res.setEncoding('utf8');
                                     res.on('data', function (data) {
                                         data = JSON.parse(data)
-                                        if(data.d !== undefined && data.m !== undefined && data.h !== undefined) {
-                                            c['Pub']['Tx'] = data;
-                                            console.log('Get New Time from IOnet');
-                                            var TxTxt = time2string(c['Pub']['Tx']);
-                                            c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
-
-                                            var options = {
-                                                host: c['Pub']['IoHost'],
-                                                port: 443,
-                                                path: c['Prv']['IoPathConfig']+'SetData&Value={}',
-                                                method: 'GET'
-                                            };
-                                            var req = https.request(options, function(res) {
-                                                //console.log('STATUS: ' + res.statusCode);
-                                                //console.log('HEADERS: ' + JSON.stringify(res.headers));
-                                                res.setEncoding('utf8');
-                                            }).end();
-                                        }
+                                        c['Pub']['Tx'] = data;
+                                        console.log('Get New Time from IOnet');
+                                        var TxTxt = time2string(c['Pub']['Tx']);
+                                        c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
+                                        oled.writeLine(5, 0, c['Pub']['TxL']);
                                     });
                                 }).end();
-
-                                //console.log(c['Pub']['Tx']);
                                 oled.writeLine(5, 0, c['Pub']['TxL']);
                             }
                         } catch (err) {
@@ -111,9 +96,8 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                             c['Pub']['TxL'] = 'IO ! CLK: ERR               ';
                             oled.writeLine(5, 0, c['Pub']['TxL']);
                         }
-                        
                     },10000);
-                //}
+                }
 
                 setInterval(function () {
                     //oled.clearDisplay();
@@ -122,31 +106,41 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                     var Tw = new Date();
                     c['Pub']['Tw'] = { "d":Tw.getDate(), "h":Tw.getHours(), "m":Tw.getMinutes()}
                     var TwTxt = time2string(c['Pub']['Tw']);
-                    oled.writeLine(1, 0, 'Time NTP: '+TwTxt);
+                    oled.writeLine(1, 0, 'Time NTP: '+TwTxt+'           ');
 
                     try {
-                    	c['Pub']['scstmp'] = fs.readFileSync('scs.tmp', "utf8");
+                        c['Pub']['scstmp'] = fs.readFileSync('scs.tmp', "utf8");
                     } catch (e) {
-                    	c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
-                    	timer();
+                        c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
+                        timer();
                     }
                     
                     try {
-						c['Pub']['Ts'] = JSON.parse(c['Pub']['scstmp']);
+                        c['Pub']['Ts'] = JSON.parse(c['Pub']['scstmp']);
                     } catch (e) {
-                    	c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
-                    	timer();
+                        c['Pub']['Ts'] = {'d':0,'h':0,'m':0};
+                        timer();
                     }
 
-                    //if(c['Pub']['IoNet'] == true && c['Pub']['IoPathConfig'] !== undefined) {
-                        if(c['Pub']['Tx'].d !== undefined && c['Pub']['Tx'].h !== undefined && c['Pub']['Tx'].m !== undefined) {
-                            //console.log('RESET TimeStamp');
-                            c['Pub']['Ts'] = c['Pub']['Tx'];
-                            var TxTxt = time2string(c['Pub']['Tx']);
-                            c['Pub']['TxL'] = 'IO   CLK: '+TxTxt+'               ';
-                            oled.writeLine(5, 0, c['Pub']['TxL']);
-                        }
-                    //}
+                    if(c['Pub']['Tx'].d !== undefined && c['Pub']['Tx'].h !== undefined && c['Pub']['Tx'].m !== undefined) {
+                        //console.log('RESET TimeStamp');
+                        c['Pub']['Ts'] = c['Pub']['Tx'];
+                        var TxTxt = time2string(c['Pub']['Tx']);
+                        c['Pub']['TxL'] = 'IO . CLK: '+TxTxt+'               ';
+                        oled.writeLine(5, 0, c['Pub']['TxL']);
+                        c['Pub']['Tx'] = {};
+                        var options = {
+                            host: c['Pub']['IoHost'],
+                            port: 443,
+                            path: c['Prv']['IoPathConfig']+'SetData&Value={}',
+                            method: 'GET'
+                        };
+                        var reqRes = https.request(options, function(res) {
+                            //console.log('STATUS RESET Timer: ' + res.statusCode);
+                            //console.log('HEADERS: ' + JSON.stringify(res.headers));
+                            res.setEncoding('utf8');
+                        }).end();
+                    }
 
                     var TsTxt = time2string(c['Pub']['Ts']);
                     oled.writeLine(2, 0, 'Time CLK: '+TsTxt+'               ');
@@ -163,7 +157,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                     oled.writeLine(3, 0, 'Steps   : '+Steps.toString()+'               ');
                     c['Pub']['Steps'] = Steps;
 
-                    //if(c['Pub']['IoNet'] == true && c['Pub']['IoPathBeat'] !== undefined) {
+                    if(c['Pub']['IoNet'] == true && c['Prv']['IoPathBeat'] !== undefined) {
                         var StoreTxt = encodeURIComponent(JSON.stringify(c['Pub']));
                         var options = {
                             host: c['Pub']['IoHost'],
@@ -177,7 +171,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                             //console.log('HEADERS: ' + JSON.stringify(res.headers));
                             res.setEncoding('utf8');
                         }).end();
-                    //}
+                    }
 
                     if(Steps > 0) {
                         impulse();
