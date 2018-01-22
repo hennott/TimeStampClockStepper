@@ -18,6 +18,7 @@ c['Pub']['IoHost'] = 'io.XXX.de';
 c['Prv']['IoPathConfig'] = '/io.php?Api=filestore&Container=XXX&Path=config.json&UserId=XXX&UserKey=XXX&Action='; 
 c['Prv']['IoPathBeat'] = '/io.php?Api=filestore&Container=XXX&Path=beat.json&UserId=XXX&UserKey=XXX&Action=';
 
+
 if(typeof require === 'function' ) {
     var tf = require('tinkerforge');
     var fs = require('fs')
@@ -83,7 +84,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                                     res.on('data', function (data) {
                                         data = JSON.parse(data)
                                         c['Pub']['Tx'] = data;
-                                        console.log('Get New Time from IOnet');
+                                        //console.log('Get New Time from IOnet');
                                         var TxTxt = time2string(c['Pub']['Tx']);
                                         c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
                                         oled.writeLine(5, 0, c['Pub']['TxL']);
@@ -101,7 +102,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
 
                 setInterval(function () {
                     //oled.clearDisplay();
-                    oled.writeLine(0, 0, 'StampClockStepper v.29');
+                    oled.writeLine(0, 0, 'StampClockStepper v.31');
                     
                     var Tw = new Date();
                     c['Pub']['Tw'] = { "d":Tw.getDate(), "h":Tw.getHours(), "m":Tw.getMinutes()}
@@ -238,8 +239,8 @@ function impulse() {
 function timer() {
     var t = c['Pub']['Ts'];
 
-    if(t.m < 60) {
-        t.m+=1;
+    if(t.m < 59) {
+        t.m += 1;
     } else {
         if(t.h < 23) {
             t.h += 1;
