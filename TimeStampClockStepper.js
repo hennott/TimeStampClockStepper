@@ -9,15 +9,23 @@ c['Switch'] = {};
 c['Switch']['Uid'] = 'XXX';
 c['Pub'] = {};
 c['Prv'] = {};
+c['Pub']['Log'] = true;
 c['Pub']['Interval'] = 10; // in s
 c['Pub']['Monoflop'] = 500; // in ms
 c['Pub']['MonoflopBrake'] = 500; // in ms
 c['Pub']['IoNet'] = true;
 c['Pub']['Ip'] = 'localhost';
 c['Pub']['IoHost'] = 'io.XXX.de';
+c['Pub']['IoSSL'] = true;
 c['Prv']['IoPathConfig'] = '/io.php?Api=filestore&Container=XXX&Path=config.json&UserId=XXX&UserKey=XXX&Action='; 
 c['Prv']['IoPathBeat'] = '/io.php?Api=filestore&Container=XXX&Path=beat.json&UserId=XXX&UserKey=XXX&Action=';
 
+function Log(m) {
+    c['Pub']['Log'] = c['Pub']['Log'] || false;
+    if(c['Pub']['Log']) {
+        console.log(m);
+    }
+}
 
 if(typeof require === 'function' ) {
     var tf = require('tinkerforge');
@@ -27,9 +35,17 @@ if(typeof require === 'function' ) {
     c['Port'] = c['PortServer'];
     var os = require('os');
     var net = os.networkInterfaces();
+    var service = http;
+    c['Pub']['IoPort'] = 80;
 
     if(net['wlan0'] !== undefined && net['wlan0'][0] !== undefined) {
         c['Pub']['Ip'] = net['wlan0'][0]['address'];
+    } else {
+        c['Pub']['IoNet'] = false;
+    }
+    if(c['Pub']['IoSSL'] == true) {
+        service = https;
+        c['Pub']['IoPort'] = 443;
     }
 } else {
     c['Port'] = c['PortBrowser'];
@@ -48,7 +64,7 @@ var iqr = new tf.BrickletIndustrialQuadRelay(c['Switch']['Uid'], ipcon);
 
 ipcon.connect(c['Host'], c['Port'],
     function (error) {
-        console.log('Error: ' + error);
+        Log('Error: ' + error);
     }
 );
 
@@ -56,7 +72,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
     function (connectReason) {
         ipcon.authenticate(c['Secret'],
             function() {
-                //console.log('Authentication succeeded');
+                Log('Authentication succeeded');
 
                 oled.clearDisplay();
                 oled.writeLine(0, 0, 'StampClockStepper');
@@ -66,35 +82,41 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                 c['Pub']['TxL'] = 'IO   CLK: --               ';
                 oled.writeLine(5, 0, c['Pub']['TxL']);
 
-                if(c['Pub']['IoNet'] == true && c['Prv']['IoPathConfig'] !== undefined) {
+                if(c['Pub']['IoNet'] !== undefined && c['Pub']['IoNet'] == true && c['Prv']['IoPathConfig'] !== undefined && c['Prv']['IoPathConfig'] !== '') {
                     setInterval(function () {
                          try {
                             if(c['Pub']['Tx'].set == undefined) {
                                 var options = {
                                     host: c['Pub']['IoHost'],
-                                    port: 443,
+                                    port: c['Pub']['IoPort'],
                                     path: c['Prv']['IoPathConfig']+'GetData',
                                     method: 'GET'
                                 };
-
-                                var req = https.request(options, function(res) {
-                                    //console.log('STATUS: ' + res.statusCode);
-                                    //console.log('HEADERS: ' + JSON.stringify(res.headers));
-                                    res.setEncoding('utf8');
-                                    res.on('data', function (data) {
-                                        data = JSON.parse(data)
-                                        c['Pub']['Tx'] = data;
-                                        //console.log('Get New Time from IOnet');
-                                        var TxTxt = time2string(c['Pub']['Tx']);
-                                        c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
-                                        oled.writeLine(5, 0, c['Pub']['TxL']);
-                                    });
-                                }).end();
-                                oled.writeLine(5, 0, c['Pub']['TxL']);
+                                Log(options);
+                                try {
+                                    var req = service.request(options, function(res) {
+                                        Log('STATUS: ' + res.statusCode);
+                                        Log('HEADERS: ' + JSON.stringify(res.headers));
+                                        res.setEncoding('utf8');
+                                        res.on('data', function (data) {
+                                            data = JSON.parse(data)
+                                            c['Pub']['Tx'] = data;
+                                            Log('Get New Time from IOnet');
+                                            var TxTxt = time2string(c['Pub']['Tx']);
+                                            c['Pub']['TxL'] = 'IO > CLK: '+TxTxt+'               ';
+                                            oled.writeLine(5, 0, c['Pub']['TxL']);
+                                        });
+                                    }).end();
+                                    oled.writeLine(5, 0, c['Pub']['TxL']);
+                                } catch (err) {
+                                    Log('ERR '+err);
+                                    c['Pub']['TxL'] = 'IO ! CLK: ERR 2              ';
+                                    oled.writeLine(5, 0, c['Pub']['TxL']);
+                                }
                             }
                         } catch (err) {
                             c['Pub']['Tx'] = {};
-                            c['Pub']['TxL'] = 'IO ! CLK: ERR               ';
+                            c['Pub']['TxL'] = 'IO ! CLK: ERR 1              ';
                             oled.writeLine(5, 0, c['Pub']['TxL']);
                         }
                     },10000);
@@ -124,7 +146,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                     }
 
                     if(c['Pub']['Tx'].d !== undefined && c['Pub']['Tx'].h !== undefined && c['Pub']['Tx'].m !== undefined) {
-                        //console.log('RESET TimeStamp');
+                        Log('RESET TimeStamp');
                         c['Pub']['Ts'] = c['Pub']['Tx'];
                         var TxTxt = time2string(c['Pub']['Tx']);
                         c['Pub']['TxL'] = 'IO . CLK: '+TxTxt+'               ';
@@ -132,15 +154,22 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                         c['Pub']['Tx'] = {};
                         var options = {
                             host: c['Pub']['IoHost'],
-                            port: 443,
+                            port: c['Pub']['IoPort'],
                             path: c['Prv']['IoPathConfig']+'SetData&Value={}',
                             method: 'GET'
                         };
-                        var reqRes = https.request(options, function(res) {
-                            //console.log('STATUS RESET Timer: ' + res.statusCode);
-                            //console.log('HEADERS: ' + JSON.stringify(res.headers));
-                            res.setEncoding('utf8');
-                        }).end();
+                        Log(options);
+                        try {
+                            var reqRes = service.request(options, function(res) {
+                                Log('STATUS RESET Timer: ' + res.statusCode);
+                                Log('HEADERS: ' + JSON.stringify(res.headers));
+                                res.setEncoding('utf8');
+                            }).end();
+                        } catch (err) {
+                            Log('ERR '+err);
+                            c['Pub']['TxL'] = 'IO ! CLK: ERR 3              ';
+                            oled.writeLine(5, 0, c['Pub']['TxL']);
+                        }
                     }
 
                     var TsTxt = time2string(c['Pub']['Ts']);
@@ -162,16 +191,22 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                         var StoreTxt = encodeURIComponent(JSON.stringify(c['Pub']));
                         var options = {
                             host: c['Pub']['IoHost'],
-                            port: 443,
+                            port: c['Pub']['IoPort'],
                             path: c['Prv']['IoPathBeat']+'SetData&Value='+StoreTxt, //{"Ts.d":"'+c['Pub']['Ts'].d+'"}',
                             method: 'GET'
                         };
-                        //console.log(options);
-                        var req = https.request(options, function(res) {
-                            //console.log('STATUS: ' + res.statusCode);
-                            //console.log('HEADERS: ' + JSON.stringify(res.headers));
-                            res.setEncoding('utf8');
-                        }).end();
+                        Log(options);
+                        try {
+                            var reqRes = service.request(options, function(res) {
+                                Log('STATUS RESET Timer: ' + res.statusCode);
+                                Log('HEADERS: ' + JSON.stringify(res.headers));
+                                res.setEncoding('utf8');
+                            }).end();
+                        } catch (err) {
+                            Log('ERR '+err);
+                            c['Pub']['TxL'] = 'IO ! CLK: ERR 4              ';
+                            oled.writeLine(5, 0, c['Pub']['TxL']);
+                        }
                     }
 
                     if(Steps > 0) {
@@ -195,7 +230,7 @@ ipcon.on(tf.IPConnection.CALLBACK_CONNECTED,
                 }, 1000);
 
             }, function(error) {
-                console.log('Could not authenticate: '+error);
+                Log('Could not authenticate: '+error);
             }
         );
     }
@@ -262,10 +297,10 @@ function timer() {
 }
 
 function time2string(a) {
-    //console.log('time2string');
+    Log('time2string');
     try {
         if(a !== undefined && a.length !== 0 && a.d !== undefined && a.h !== undefined && a.m !== undefined) {
-            //console.log(a);
+            Log(a);
             var d = a.d;
             if(d < 10) {
                 d = '0'+d;
@@ -283,7 +318,7 @@ function time2string(a) {
             return '--';
         }
     } catch (err) {
-        console.log(err);
+        Log(err);
         return '--';
     }
 }
